@@ -160,10 +160,12 @@ class _ChatPageState extends State<ChatPage> {
                 child: Column(children: [
                   Expanded(
                     child: ListView.builder(
+                        reverse: true,
                         controller: _scrollController,
                         itemCount: c.messages.length,
                         itemBuilder: ((context, index) {
-                          return textBubble(c.messages[index]);
+                          return textBubble(
+                              c.messages[c.messages.length - 1 - index]);
                         })),
                   ),
                   Container(
