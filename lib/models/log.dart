@@ -143,7 +143,7 @@ class LogService {
     return logs;
   }
 
-  Stream<List<QueryDocumentSnapshot>> getLogsByDate(DateTime date) async* {
+  Future<List<QueryDocumentSnapshot>> getLogsByDate(DateTime date) async {
     List<QueryDocumentSnapshot> logs = [];
     var s = _firestore
         .collection('users')
@@ -151,14 +151,14 @@ class LogService {
         .collection('entries')
         .where('timeCreated', isGreaterThanOrEqualTo: date)
         .where('timeCreated', isLessThan: date.add(const Duration(days: 1)))
-        .get()
-        .asStream();
+        .get();
 
-    yield* s.map((event) {
-      for (var element in event.docs) {
+    await s.then((value) {
+      for (var element in value.docs) {
         logs.add(element);
       }
-      return logs;
     });
+
+    return logs;
   }
 }

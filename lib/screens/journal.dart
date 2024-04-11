@@ -69,13 +69,18 @@ class _NoteEditorState extends State<NoteEditor> {
       appBar: AppBar(
         title: const Text("Create a log"),
       ),
-      body: Container(
-        child: TextField(
-          controller: logController,
-          maxLines: 100,
-          decoration: const InputDecoration(
-            hintText: "Write your log here",
-            border: OutlineInputBorder(),
+      body: PopScope(
+        onPopInvoked: (didPop) {
+          // if the user presses the back button
+        },
+        child: Container(
+          child: TextField(
+            controller: logController,
+            maxLines: 100,
+            decoration: const InputDecoration(
+              hintText: "Write your log here",
+              border: OutlineInputBorder(),
+            ),
           ),
         ),
       ),
@@ -115,13 +120,13 @@ class _JournalPageState extends State<JournalPage> {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: InkWell(
-        onTap: () {
+        onTap: () async {
           Navigator.push(
               context,
               MaterialPageRoute(
                   builder: (context) => NoteEditor(
                         log: log,
-                      )));
+                      ))).then((value) => setState(() {}));
         },
         child: Container(
             width: 400,
@@ -201,7 +206,7 @@ class _JournalPageState extends State<JournalPage> {
                 MaterialPageRoute(
                     builder: (context) => NoteEditor(
                           log: null,
-                        )));
+                        ))).then((value) => setState(() {}));
           },
           child: const Icon(Icons.add_outlined)),
       appBar: AppBar(
@@ -227,14 +232,21 @@ class _JournalPageState extends State<JournalPage> {
         ],
       ),
       body: Center(
-        child: StreamBuilder<List<QueryDocumentSnapshot>>(
-            stream: LogService().getLogsByDate(selectedDate),
-            initialData: [],
+        child: FutureBuilder<List<QueryDocumentSnapshot>>(
+            future: LogService().getLogsByDate(selectedDate),
             builder: (context, snapshot) {
               return AspectRatio(
                 aspectRatio: 0.8,
                 child: Column(
                   children: [
+                    Align(
+                        alignment: Alignment.topRight,
+                        child: IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: () {
+                            setState(() {});
+                          },
+                        )),
                     Text(
                       DateFormat('dd MMMM yyyy').format(selectedDate),
                       style: const TextStyle(
@@ -273,7 +285,9 @@ class _JournalPageState extends State<JournalPage> {
                                           MaterialPageRoute(
                                               builder: (context) => NoteEditor(
                                                     log: null,
-                                                  )));
+                                                  ))).then((value) {
+                                        setState(() {});
+                                      });
                                     },
                                     child: const Text("Create a log"),
                                   )
