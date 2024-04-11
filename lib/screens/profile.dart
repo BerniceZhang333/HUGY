@@ -32,14 +32,16 @@ class _ProfilePageState extends State<ProfilePage> {
                 FilePickerResult? image = await FilePicker.platform
                     .pickFiles(type: FileType.image, allowMultiple: false);
 
-                if (image != null) {
-                  File file = File(image.files.first.path!);
-                  Uint8List bytes = file.readAsBytesSync();
+                if (image != null && image.files.isNotEmpty) {
+                  // File file = File(image.files.first.path!);
+                  final fileBytes = image.files.first.bytes;
+
+                  //Uint8List bytes = file.readAsBytesSync();
                   String fileName =
                       '${FirebaseAuth.instance.currentUser!.email!}.jpg';
                   await FirebaseStorage.instance
                       .ref('profiles/$fileName')
-                      .putData(bytes);
+                      .putData(fileBytes!);
 
                   String downloadURL = await FirebaseStorage.instance
                       .ref('profiles/$fileName')

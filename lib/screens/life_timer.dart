@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:hugy/auth/firebase.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
 
 class LifeTimer extends StatefulWidget {
   const LifeTimer({super.key});
