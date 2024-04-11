@@ -41,7 +41,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
         .limit(1)
         .get();
     //String? mood = await getMood(snapshot.docs.first.data()['content']);
-    String lastEntry = snapshot.docs.first.data()['content'];
+    //String lastEntry = snapshot.docs.first.data()['content'];
 
     String systemPrompt =
         'act as a mental health expert. Provide a list of activities that can help me improve my mood. ';
