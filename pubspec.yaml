@@ -47,6 +47,7 @@ dependencies:
   google_generative_ai: ^0.2.2
   flutter_gemini: ^2.0.3
   logging: ^1.2.0
+  flutter_markdown: ^0.7.3+1
 
 dev_dependencies:
   flutter_launcher_icons: "^0.13.1"
@@ -67,20 +68,20 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/hugy.png"
+  image_path: "assets/hugy.jpg"
   min_sdk_android: 21 # android min sdk min:16, default 21
   web:
     generate: true
-    image_path: "assets/hugy.png"
+    image_path: "assets/hugy.jpg"
     background_color: "#hexcode"
     theme_color: "#hexcode"
   windows:
     generate: true
-    image_path: "assets/hugy.png"
+    image_path: "assets/hugy.jpg"
     icon_size: 48 # min:48, max:256, default: 48
   macos:
     generate: true
-    image_path: "assets/hugy.png"
+    image_path: "assets/hugy.jpg"
 
 # The following section is specific to Flutter packages.
 flutter:

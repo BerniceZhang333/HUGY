@@ -1,72 +1,119 @@
 import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import 'package:hugy/api/nlp.dart';
 import 'package:hugy/models/task.dart';
 
 class DiscoverPage extends StatefulWidget {
-  const DiscoverPage({super.key});
+  const DiscoverPage({Key? key}) : super(key: key);
 
   @override
   State<DiscoverPage> createState() => _DiscoverPageState();
 }
 
 class _DiscoverPageState extends State<DiscoverPage> {
+  List<String> activities = [];
+  bool _isLoading = true;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
-    getActivity();
+    _getActivities();
   }
 
-  List<String> activities = [];
+  Future<void> _getActivities() async {
+    try {
+      String key = await FirebaseFirestore.instance
+          .collection("keys")
+          .doc('openai_key')
+          .get()
+          .then((value) => value.data()?['data']);
 
-  Future<void> getActivity() async {
-    String key = await FirebaseFirestore.instance
-        .collection("keys")
-        .doc('openai_key')
-        .get()
-        .then((value) => value.data()?['data']);
-    final gemini = GenerativeModel(model: "gemini-pro", apiKey: key);
+      if (key == null || key.isEmpty) {
+        throw Exception('API key not found');
+      }
 
-    FirebaseFirestore fs = FirebaseFirestore.instance;
-    String userId = FirebaseAuth.instance.currentUser!.uid;
-    var collection = fs.collection("users").doc(userId).collection("entries");
+      final gemini = GenerativeModel(model: "gemini-pro", apiKey: key);
 
-    // get last entry
-    var snapshot = await collection
-        .orderBy("timeCreated", descending: true)
-        .limit(1)
-        .get();
-    //String? mood = await getMood(snapshot.docs.first.data()['content']);
-    //String lastEntry = snapshot.docs.first.data()['content'];
+      String systemPrompt =
+          'Act as a mental health expert. Provide a list of activities that can help improve mood.';
+      String userPrompt =
+          "Please provide 10 activities that can help improve mood. Respond ONLY with a JSON object in this exact format: {\"activities\": [\"activity1\", \"activity2\", ...]}";
 
-    String systemPrompt =
-        'act as a mental health expert. Provide a list of activities that can help me improve my mood. ';
-    String userPrompt =
-        "Please provide 10 activities that can help me improve my mood.In json format. Exactly like this: {\"activities\": ['activity1', 'activity2']} etc.";
+      final chat = gemini.startChat(history: [
+        Content.text(userPrompt),
+        Content.model([TextPart(systemPrompt)]),
+      ]);
 
-    final chat = gemini.startChat(history: [
-      Content.text(userPrompt),
-      Content.model([TextPart(systemPrompt)]),
-    ]);
+      var response = await chat.sendMessage(Content.text(userPrompt));
 
-    var response = await chat.sendMessage(Content.text(userPrompt));
+      if (response.text != null) {
+        Map<String, dynamic> activitiesMap = _parseJson(response.text!);
+        if (mounted) {
+          setState(() {
+            activities = List<String>.from(activitiesMap['activities']);
+            _isLoading = false;
+          });
+        }
+      } else {
+        throw Exception('No response from AI');
+      }
+    } catch (e) {
+      _handleError(e);
+    }
+  }
 
-    print(response.text);
-    setState(() {
-      Map<String, dynamic> activities = jsonDecode(response.text!);
-      activities['activities'].forEach((activity) {
-        this.activities.add(activity);
+  Map<String, dynamic> _parseJson(String jsonString) {
+    try {
+      // Try to parse the JSON
+      Map<String, dynamic> parsed = jsonDecode(jsonString);
+      if (!parsed.containsKey('activities') ||
+          !(parsed['activities'] is List)) {
+        throw FormatException('Invalid JSON structure');
+      }
+      return parsed;
+    } catch (e) {
+      // If parsing fails, try to extract a JSON-like structure
+      RegExp regex = RegExp(r'\{[\s\S]*\}');
+      Match? match = regex.firstMatch(jsonString);
+      if (match != null) {
+        try {
+          Map<String, dynamic> extracted = jsonDecode(match.group(0)!);
+          if (extracted.containsKey('activities') &&
+              extracted['activities'] is List) {
+            return extracted;
+          }
+        } catch (_) {
+          // If extraction fails, fall through to the default activities
+        }
+      }
+      // Return a default set of activities if all else fails
+      return {
+        'activities': [
+          'Take a walk in nature',
+          'Practice deep breathing exercises',
+          'Call a friend or family member',
+          'Write in a gratitude journal',
+          'Try a new hobby or craft',
+        ]
+      };
+    }
+  }
+
+  void _handleError(dynamic error) {
+    if (mounted) {
+      setState(() {
+        _error = 'Unable to load recommendations. Please try again later.';
+        _isLoading = false;
       });
-    });
+    }
+    print('Error in _getActivities: $error'); // Log for debugging
   }
 
-  @override
-  Widget build(BuildContext context) {
-    Future<void> addToTasks(Task task) async {
+  Future<void> _addToTasks(Task task) async {
+    try {
       final user = FirebaseFirestore.instance
           .collection('users')
           .doc(FirebaseAuth.instance.currentUser!.uid);
@@ -78,41 +125,74 @@ class _DiscoverPageState extends State<DiscoverPage> {
       if (querySnapshot.docs.isEmpty) {
         await user.collection('tasks').add(task.toJson());
       }
+    } catch (e) {
+      print('Error adding task: $e'); // Log for debugging
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Failed to add task. Please try again."),
+        ),
+      );
     }
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Your Recommendations"),
       ),
-      body: Container(
-        child: ListView.builder(
-            itemCount: activities.length,
-            itemBuilder: (BuildContext context, int index) {
-              return Card(
-                child: ListTile(
-                  onTap: () async {
-                    Task task = Task(
-                      title: activities[index],
-                      completed: false,
-                    );
-                    await addToTasks(task);
-
-                    activities.removeAt(index);
-                    setState(() {});
-
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Task added to your list."),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(_error!),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _isLoading = true;
+                            _error = null;
+                          });
+                          _getActivities();
+                        },
+                        child: const Text('Retry'),
                       ),
-                    );
-                  },
-                  contentPadding: const EdgeInsets.all(10),
-                  title: Text(activities[index]),
-                ),
-              );
-            }),
-      ),
+                    ],
+                  ),
+                )
+              : activities.isEmpty
+                  ? const CheckBackLater()
+                  : ListView.builder(
+                      itemCount: activities.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        return Card(
+                          child: ListTile(
+                            onTap: () async {
+                              Task task = Task(
+                                title: activities[index],
+                                completed: false,
+                              );
+                              await _addToTasks(task);
+
+                              if (mounted) {
+                                setState(() {
+                                  activities.removeAt(index);
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Task added to your list."),
+                                  ),
+                                );
+                              }
+                            },
+                            contentPadding: const EdgeInsets.all(10),
+                            title: Text(activities[index]),
+                          ),
+                        );
+                      },
+                    ),
     );
   }
 }
@@ -123,7 +203,8 @@ class CheckBackLater extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Center(
-      child: Text("Check back later if recommendations don't load."),
+      child: Text(
+          "No recommendations available at the moment. Please check back later."),
     );
   }
 }

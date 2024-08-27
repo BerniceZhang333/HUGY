@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hugy/screens/dashboard.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hugy/screens/home.dart';
 import 'package:hugy/screens/registration.dart';
 
 import 'dart:math';
@@ -102,7 +103,8 @@ class IntroTitle extends StatelessWidget {
 
 class CrawlingText extends StatelessWidget {
   const CrawlingText(
-      {super.key, required this.topMargin,
+      {super.key,
+      required this.topMargin,
       required this.bottomMargin,
       required this.opacity});
 
@@ -216,7 +218,7 @@ class AuthGate extends StatelessWidget {
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (BuildContext, AsyncSnapshot<User?> snapshot) {
           if (snapshot.hasData) {
-            return const Dashboard();
+            return const Home();
           } else {
             return const Registration();
           }

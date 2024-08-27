@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 class Log {
-  final String? id;
+  String? id;
   final String title;
   final String content;
   final DateTime timeCreated;
@@ -16,6 +16,14 @@ class Log {
   });
 
   Map<String, dynamic> toMap() {
+    return {
+      "title": title,
+      "content": content,
+      "timeCreated": timeCreated,
+    };
+  }
+
+  Map<String, dynamic> toJson() {
     return {
       "title": title,
       "content": content,
@@ -141,6 +149,20 @@ class LogService {
     });
 
     return logs;
+  }
+
+  Stream<QuerySnapshot> getLogStreamByDate(DateTime date) {
+    final userId = FirebaseAuth.instance.currentUser!.uid;
+    final startOfDay = DateTime(date.year, date.month, date.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    return FirebaseFirestore.instance
+        .collection("users")
+        .doc(userId)
+        .collection("entries")
+        .where("timeCreated", isGreaterThanOrEqualTo: startOfDay)
+        .where("timeCreated", isLessThan: endOfDay)
+        .snapshots();
   }
 
   Future<List<QueryDocumentSnapshot>> getLogsByDate(DateTime date) async {

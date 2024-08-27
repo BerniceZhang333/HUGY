@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:hugy/auth/gpt.dart';
 import 'package:hugy/chat/chat.dart';
 import 'package:hugy/chat/message.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class ChatPage extends StatefulWidget {
   final String chatId;
-  const ChatPage({super.key, required this.chatId});
+  const ChatPage({Key? key, required this.chatId}) : super(key: key);
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -16,228 +16,193 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
-  final FocusNode _textFieldFocus = FocusNode();
   final ScrollController _scrollController = ScrollController();
   final gemini = Gemini.instance;
 
-  bool _loading = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // get the api key
-
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels ==
-          _scrollController.position.maxScrollExtent) {
-        _scrollDown();
-      }
-    });
-    // send hello to the bot so that it can start the conversation
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
-  /*
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
 
-  Future<void> getBotResponse(String message, String behavior) async {
-    final botId = widget.chatId;
-
-    //get response
-    try {
-      await getResponse(message, behavior, botId)
-          .then((value) => {
-                //add response to chat
-                ChatService().addMessage(
-                    botId,
-                    Message(
-                        content: value!, isMe: false, timeSent: DateTime.now()))
-              })
-          .catchError((error) => {
-                ChatService().addMessage(
-                    botId,
-                    Message(
-                        content: "Sorry, Cannot reach bot",
-                        isMe: false,
-                        timeSent: DateTime.now()))
-              });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sorry, Cannot reach bot'),
-        ),
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
       );
     }
   }
-  */
 
-  Widget textBubble(Message message) {
-    return Padding(
-      padding: const EdgeInsets.all(10.0),
-      child: Align(
-        alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.all(10.0),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            color: Colors.blue,
-          ),
-          child: Container(
-            child: Text(
-              message.content,
-              style: const TextStyle(fontSize: 20.0),
-            ),
+  Widget _buildMessageBubble(Message message) {
+    return Align(
+      alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.7,
+        ),
+        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: message.isMe ? Colors.blue[100] : Colors.grey[300],
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: MarkdownBody(
+          data: message.content,
+          styleSheet: MarkdownStyleSheet(
+            p: TextStyle(color: message.isMe ? Colors.black87 : Colors.black),
           ),
         ),
       ),
     );
   }
 
-  void _scrollDown() {
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
-  }
+  Future<void> _sendMessage() async {
+    final messageText = _messageController.text.trim();
+    if (messageText.isEmpty) return;
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
-  }
-
-  Future<void> _sendChatMessage(String message) async {
-    setState(() {
-      _loading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      String behavior = await getBehavior(widget.chatId);
-      final response = await gemini.text(behavior + message).then((value) {
-        ChatService().addMessage(
-            widget.chatId,
-            Message(
-                content: value!.output!,
-                isMe: false,
-                timeSent: DateTime.now()));
-      }).whenComplete(() {
-        _scrollDown();
-      });
-    } catch (e) {
-      _showError(e.toString());
-      setState(() {
-        _loading = false;
-      });
-    } finally {
+      final message = Message(
+        content: messageText,
+        isMe: true,
+        timeSent: DateTime.now(),
+      );
+
+      await ChatService().addMessage(widget.chatId, message);
       _messageController.clear();
-      _scrollDown();
-      setState(() {
-        _loading = false;
-      });
-      _textFieldFocus.requestFocus();
+
+      final behavior = await getBehavior(widget.chatId);
+      final response = await gemini.text(behavior + messageText);
+
+      if (response?.output != null) {
+        final botMessage = Message(
+          content: response!.output!,
+          isMe: false,
+          timeSent: DateTime.now(),
+        );
+        await ChatService().addMessage(widget.chatId, botMessage);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+      _scrollToBottom();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('chats')
-            .doc(widget.chatId)
-            .get()
-            .asStream(),
-        builder: (context, snapshot) {
-          if (snapshot.hasData) {
-            Chat c = Chat.fromDocumentSnapshot(snapshot.data!);
-            return Scaffold(
-              appBar: AppBar(
-                title: Text(c.chatName),
-                centerTitle: true,
-              ),
-              body: Container(
-                color: Colors.grey[200],
-                child: Column(children: [
-                  Expanded(
-                    child: ListView.builder(
-                        reverse: true,
-                        controller: _scrollController,
-                        itemCount: c.messages.length,
-                        itemBuilder: ((context, index) {
-                          return textBubble(
-                              c.messages[c.messages.length - 1 - index]);
-                        })),
-                  ),
-                  Container(
-                    height: 50,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Colors.grey,
-                        width: 1,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.all(10),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            focusNode: _textFieldFocus,
-                            controller: _messageController,
-                            onSubmitted: (value) async {
-                              String behavior = await getBehavior(
-                                  widget.chatId); // get behavior
-                              Message message = Message(
-                                content: value,
-                                isMe: true,
-                                timeSent: DateTime.now(),
-                              );
-                              await ChatService()
-                                  .addMessage(widget.chatId, message);
+    return Scaffold(
+      appBar: AppBar(
+        title: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('chats')
+              .doc(widget.chatId)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              final chat = Chat.fromDocumentSnapshot(snapshot.data!);
+              return Text(chat.chatName);
+            }
+            return const Text('Loading...');
+          },
+        ),
+        centerTitle: true,
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('chats')
+                  .doc(widget.chatId)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  final chat = Chat.fromDocumentSnapshot(snapshot.data!);
+                  return ListView.builder(
+                    reverse: true,
+                    controller: _scrollController,
+                    itemCount: chat.messages.length,
+                    itemBuilder: (context, index) {
+                      return _buildMessageBubble(
+                          chat.messages[chat.messages.length - 1 - index]);
+                    },
+                  );
+                }
+                return const Center(child: CircularProgressIndicator());
+              },
+            ),
+          ),
+          _buildInputArea(),
+        ],
+      ),
+    );
+  }
 
-                              await _sendChatMessage(value);
-
-                              // setState
-                              setState(() {
-                                _messageController.clear();
-                              }); // we will use streams later
-                            },
-                            style: const TextStyle(color: Colors.black),
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () async {
-                            if (_messageController.text.isEmpty) {
-                              return;
-                            }
-                            String behavior = await getBehavior(widget.chatId);
-                            Message message = Message(
-                              content: _messageController.text,
-                              isMe: true,
-                              timeSent: DateTime.now(),
-                            );
-                            await ChatService()
-                                .addMessage(widget.chatId, message);
-                            await _sendChatMessage(_messageController.text);
-                            setState(() {
-                              _messageController.clear();
-                            });
-                          },
-                          icon: const Icon(Icons.send),
-                          color: Colors.blue,
-                        ),
-                      ],
-                    ),
-                  ),
-                ]),
+  Widget _buildInputArea() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            offset: const Offset(0, -2),
+            blurRadius: 4,
+            color: Colors.black.withOpacity(0.1),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              decoration: InputDecoration(
+                hintText: 'Type a message...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.grey[200],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
               ),
-            );
-          } else {
-            return const CircularProgressIndicator();
-          }
-        });
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _sendMessage(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.send),
+            onPressed: _isLoading ? null : _sendMessage,
+            color: Colors.blue,
+          ),
+        ],
+      ),
+    );
   }
 }
