@@ -42,12 +42,15 @@ class _NoteEditorState extends State<NoteEditor> {
     final fs = FirebaseFirestore.instance;
     final logContent = logController.text;
 
+    if (logContent.isEmpty) {
+      return;
+    }
+
     if (widget.log == null) {
-      // Create new log
       final newLog = Log(
         content: logContent,
         timeCreated: DateTime.now(),
-        title: DateFormat('dd MM yyyy').format(DateTime.now()),
+        title: DateFormat('dd MMM yyyy').format(DateTime.now()),
       );
       final docRef = await fs
           .collection("users")
@@ -57,7 +60,6 @@ class _NoteEditorState extends State<NoteEditor> {
       newLog.id = docRef.id;
       widget.onLogUpdated(newLog);
     } else {
-      // Update existing log
       await fs
           .collection("users")
           .doc(userId)
@@ -88,7 +90,7 @@ class _NoteEditorState extends State<NoteEditor> {
       appBar: AppBar(
         title: Text(widget.log == null ? "Create a log" : "Edit log"),
       ),
-      body: Container(
+      body: Padding(
         padding: const EdgeInsets.all(16),
         child: TextField(
           controller: logController,
@@ -119,7 +121,7 @@ class _JournalPageState extends State<JournalPage> {
   void initState() {
     super.initState();
     initializeDateFormatting();
-    pageController = PageController(viewportFraction: 0.8);
+    pageController = PageController();
   }
 
   @override
@@ -129,97 +131,39 @@ class _JournalPageState extends State<JournalPage> {
   }
 
   String truncate(String data) {
-    return data.length > 27 ? '${data.substring(0, 27)}...' : data;
+    return data.length > 50 ? '${data.substring(0, 50)}...' : data;
   }
 
   Widget noteCard(Log log) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => NoteEditor(
-                log: log,
-                onLogUpdated: (updatedLog) {
-                  setState(() {});
-                },
-              ),
-            ),
-          );
-        },
-        child: Container(
-          width: 400,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            image: const DecorationImage(
-              opacity: 0.8,
-              image: AssetImage("assets/circles.png"),
-              fit: BoxFit.cover,
-            ),
-            boxShadow: [
-              BoxShadow(
-                blurStyle: BlurStyle.outer,
-                blurRadius: 20,
-                color: Colors.black.withOpacity(0.25),
-              ),
-            ],
+      child: Card(
+        elevation: 4,
+        child: ListTile(
+          title: Text(DateFormat('h:mm a').format(log.timeCreated)),
+          subtitle: Text(truncate(log.content)),
+          trailing: IconButton(
+            icon: const Icon(Icons.delete),
+            onPressed: () async {
+              await LogService().deleteLog(log.id!);
+              setState(() {});
+            },
           ),
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    DateFormat('h:mm a').format(log.timeCreated),
-                    style: const TextStyle(
-                        fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () async {
-                      await LogService().deleteLog(log.id!);
-                      setState(() {});
-                    },
-                  )
-                ],
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => NoteEditor(
+                  log: log,
+                  onLogUpdated: (updatedLog) {
+                    setState(() {});
+                  },
+                ),
               ),
-              Text(
-                truncate(log.content),
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w300),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget carouselView(List<dynamic> logs, int index) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return AnimatedBuilder(
-          animation: pageController,
-          builder: (context, child) {
-            double value = 0;
-            if (pageController.position.haveDimensions) {
-              value = pageController.page! - index;
-            } else {
-              // If dimensions are not available, use the initial page
-              value = -index.toDouble();
-            }
-            value = (value * 0.038).clamp(-1, 1);
-
-            return Transform.rotate(
-              angle: value,
-              child: noteCard(logs[index % logs.length]),
             );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -227,8 +171,6 @@ class _JournalPageState extends State<JournalPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       floatingActionButton: FloatingActionButton(
-        backgroundColor:
-            Theme.of(context).floatingActionButtonTheme.backgroundColor,
         onPressed: () {
           Navigator.push(
             context,
@@ -242,13 +184,13 @@ class _JournalPageState extends State<JournalPage> {
             ),
           );
         },
-        child: const Icon(Icons.add_outlined),
+        child: const Icon(Icons.add),
       ),
       appBar: AppBar(
         title: const Text("Journal"),
         actions: [
           IconButton(
-            icon: const Icon(Icons.calendar_month_outlined),
+            icon: const Icon(Icons.calendar_today),
             onPressed: () async {
               final date = await showDatePicker(
                 context: context,
@@ -279,54 +221,29 @@ class _JournalPageState extends State<JournalPage> {
                   .toList() ??
               [];
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  DateFormat('dd MMMM yyyy').format(selectedDate),
-                  style: const TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-              ),
-              if (logs.isEmpty)
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text("No logs found"),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => NoteEditor(
-                                  log: null,
-                                  onLogUpdated: (newLog) {
-                                    setState(() {});
-                                  },
-                                ),
-                              ),
-                            );
-                          },
-                          child: const Text("Create a log"),
-                        )
-                      ],
-                    ),
+          return logs.isEmpty
+              ? Center(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => NoteEditor(
+                            log: null,
+                            onLogUpdated: (newLog) {
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text("Create a log"),
                   ),
                 )
-              else
-                Expanded(
-                  child: PageView.builder(
-                    controller: pageController,
-                    physics: const ClampingScrollPhysics(),
-                    itemCount: logs.length,
-                    itemBuilder: (context, index) => carouselView(logs, index),
-                  ),
-                ),
-            ],
-          );
+              : ListView.builder(
+                  itemCount: logs.length,
+                  itemBuilder: (context, index) => noteCard(logs[index]),
+                );
         },
       ),
     );

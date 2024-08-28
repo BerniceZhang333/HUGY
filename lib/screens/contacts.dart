@@ -12,24 +12,25 @@ List<Map<String, dynamic>> chatBots = [
     "name": "June",
     "description": "Mental Health Expert",
     "behavior":
-        "You are a mental health expert. You will give advice and useful information to users."
+        "You are a mental health expert named June. You will give advice and useful information to users."
   },
   {
     "name": "Domino",
     "description": "Riddler",
-    "behavior": "You are a playful bot. You will ask riddles to users."
+    "behavior":
+        "You are a playful bot named Domino. You will ask riddles to users."
   },
   {
     "name": "May",
     "description": "Humurous and helpful bot",
     "behavior":
-        " Witty and Humorous: This character has a witty and humorous personality, using humor to relieve stress and confusion. They can offer lighthearted conversations and suggestions to help users relax in a fun atmosphere."
+        " You are a humurous bot named May. They can offer lighthearted conversations and suggestions to help users relax in a fun atmosphere."
   },
   {
     "name": "April",
     "description": "Philosopher",
     "behavior":
-        "AI can provide (methods and steps for thinking through issues), help users (analyze and evaluate different perspectives and values of life), as well as guide users to (deepen their thinking) about the meaning and value of life through (philosophical exercises and reflections)."
+        "You are a philosopher named April, help users (analyze and evaluate different perspectives and values of life), as well as guide users to (deepen their thinking) about the meaning and value of life through (philosophical exercises and reflections)."
   }
 ];
 
@@ -42,8 +43,28 @@ class ContactsPage extends StatefulWidget {
 
 class _ContactsPageState extends State<ContactsPage> {
   final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
-  Stream loadChats() {
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.toLowerCase();
+    });
+  }
+
+  Stream<QuerySnapshot> loadChats() {
     final userId = FirebaseAuth.instance.currentUser!.uid;
     return FirebaseFirestore.instance
         .collection('chats')
@@ -128,66 +149,83 @@ class _ContactsPageState extends State<ContactsPage> {
       ),
       body: Column(
         children: [
-          TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Search',
-                prefixIcon: Icon(Icons.search)),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Search',
+                  prefixIcon: Icon(Icons.search)),
+            ),
           ),
-          StreamBuilder(
+          StreamBuilder<QuerySnapshot>(
               stream: loadChats(),
               builder: (ctx, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const CircularProgressIndicator();
                 }
 
-                final chatDocs = snapshot.data.docs;
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('No chats found.'));
+                }
+
+                final chatDocs = snapshot.data!.docs;
+                final filteredChats = chatDocs.where((doc) {
+                  final chatName = doc['chatName'].toString().toLowerCase();
+                  return chatName.contains(_searchQuery);
+                }).toList();
 
                 return Expanded(
                   child: ListView.builder(
-                    itemCount: chatDocs.length,
+                    itemCount: filteredChats.length,
                     itemBuilder: (ctx, index) {
+                      final chatDoc = filteredChats[index];
                       return Dismissible(
                         confirmDismiss: (direction) {
                           return showDialog(
-                              context: context,
-                              builder: (context) {
-                                return AlertDialog(
-                                  title: const Text("Delete Chat"),
-                                  content: const Text(
-                                      "Are you sure you want to delete this chat?"),
-                                  actions: [
-                                    TextButton(
-                                        onPressed: () {
-                                          Navigator.of(context).pop(false);
-                                        },
-                                        child: const Text("No")),
-                                    TextButton(
-                                        onPressed: () async {
-                                          await ChatService().deleteChat(
-                                              chatDocs[index]['id']);
+                            context: context,
+                            builder: (ctx) {
+                              return AlertDialog(
+                                title: const Text('Are you sure?'),
+                                content: const Text(
+                                    'Do you want to delete this chat?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(ctx).pop(false);
+                                    },
+                                    child: const Text('No'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      await ChatService()
+                                          .deleteChat(chatDocs[index]['id']);
 
-                                          if (!mounted) return;
-                                          Navigator.of(context).pop(true);
-                                        },
-                                        child: const Text("Yes")),
-                                  ],
-                                );
-                              });
+                                      if (!mounted) return;
+                                      Navigator.of(ctx).pop(true);
+                                    },
+                                    child: const Text('Yes'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
                         },
                         direction: DismissDirection.endToStart,
-                        key: ValueKey(chatDocs[index]['id']),
+                        key: ValueKey(chatDoc['id']),
                         child: ListTile(
                           onTap: () {
                             Navigator.push(context,
                                 MaterialPageRoute(builder: (BuildContext ctx) {
                               return ChatPage(
-                                chatId: chatDocs[index]['id'],
+                                chatId: chatDoc['id'],
+                                botName: chatDoc['chatName'],
+                                behavior: chatDoc['behavior'],
                               );
                             }));
                           },
-                          title: Text(chatDocs[index]['chatName']),
+                          title: Text(chatDoc['chatName']),
                         ),
                       );
                     },

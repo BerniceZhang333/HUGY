@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
-import 'package:hugy/auth/gpt.dart';
-import 'package:hugy/chat/chat.dart';
-import 'package:hugy/chat/message.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ChatPage extends StatefulWidget {
   final String chatId;
-  const ChatPage({Key? key, required this.chatId}) : super(key: key);
+  final String botName;
+  final String behavior;
+  const ChatPage(
+      {Key? key,
+      required this.chatId,
+      required this.botName,
+      required this.behavior})
+      : super(key: key);
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -19,12 +23,21 @@ class _ChatPageState extends State<ChatPage> {
   final ScrollController _scrollController = ScrollController();
   final gemini = Gemini.instance;
 
+  List<Content> _conversation = [];
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadConversation();
+    });
+  }
+
+  String convertConversationToJson() {
+    var c = {};
+    c['messages'] = _conversation.map((content) => content.toJson()).toList();
+    return c.toString();
   }
 
   @override
@@ -32,6 +45,80 @@ class _ChatPageState extends State<ChatPage> {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadConversation() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(widget.chatId)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+
+        if (mounted) {
+          setState(() {
+            _conversation = (data['messages'] as List)
+                .map((message) => Content.fromJson(message))
+                .toList();
+          });
+        }
+      } else {
+        // Start a new conversation
+        final response = await gemini.chat(_conversation);
+        if (response?.output != null) {
+          final botMessage = Content(
+            parts: [Parts(text: response!.output!)],
+            role: 'model',
+          );
+          if (mounted) {
+            setState(() {
+              _conversation.add(botMessage);
+            });
+          }
+          await _saveConversation();
+        }
+      }
+    } catch (e) {
+      print('Error loading conversation: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Error loading conversation: ${e.toString()}')),
+        );
+      }
+    }
+    if (mounted) _scrollToBottom();
+  }
+
+  List<Map<String, dynamic>> _serializeConversation(
+      List<Content> conversation) {
+    return conversation.map((content) {
+      return {
+        'role': content.role,
+        'parts': content.parts?.map((part) {
+          return {'text': part.text}; // Assuming `text` is the relevant field
+        }).toList(),
+      };
+    }).toList();
+  }
+
+  Future<void> _saveConversation() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(widget.chatId)
+          .update({
+        'messages': _serializeConversation(_conversation),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error saving conversation: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving conversation: ${e.toString()}')),
+      );
+    }
   }
 
   void _scrollToBottom() {
@@ -44,9 +131,10 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Widget _buildMessageBubble(Message message) {
+  Widget _buildMessageBubble(Content message) {
+    final isUserMessage = message.role == 'user';
     return Align(
-      alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: isUserMessage ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.7,
@@ -54,13 +142,16 @@ class _ChatPageState extends State<ChatPage> {
         margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: message.isMe ? Colors.blue[100] : Colors.grey[300],
+          color: isUserMessage ? Colors.blue[700] : Colors.grey[200],
           borderRadius: BorderRadius.circular(20),
         ),
         child: MarkdownBody(
-          data: message.content,
+          data: message.parts?.first.text ?? '',
           styleSheet: MarkdownStyleSheet(
-            p: TextStyle(color: message.isMe ? Colors.black87 : Colors.black),
+            p: TextStyle(
+              color: isUserMessage ? Colors.white : Colors.black87,
+              fontSize: 16,
+            ),
           ),
         ),
       ),
@@ -74,26 +165,31 @@ class _ChatPageState extends State<ChatPage> {
     setState(() => _isLoading = true);
 
     try {
-      final message = Message(
-        content: messageText,
-        isMe: true,
-        timeSent: DateTime.now(),
+      final userMessage = Content(
+        parts: [
+          Parts(text: messageText),
+        ],
+        role: 'user',
       );
 
-      await ChatService().addMessage(widget.chatId, message);
-      _messageController.clear();
+      setState(() {
+        _conversation.add(userMessage);
+        _messageController.clear();
+      });
 
-      final behavior = await getBehavior(widget.chatId);
-      final response = await gemini.text(behavior + messageText);
+      final response = await gemini.chat(_conversation);
 
       if (response?.output != null) {
-        final botMessage = Message(
-          content: response!.output!,
-          isMe: false,
-          timeSent: DateTime.now(),
+        final botMessage = Content(
+          parts: [Parts(text: response!.output!)],
+          role: 'model',
         );
-        await ChatService().addMessage(widget.chatId, botMessage);
+        setState(() {
+          _conversation.add(botMessage);
+        });
       }
+
+      await _saveConversation();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}')),
@@ -108,48 +204,38 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('chats')
-              .doc(widget.chatId)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.hasData) {
-              final chat = Chat.fromDocumentSnapshot(snapshot.data!);
-              return Text(chat.chatName);
-            }
-            return const Text('Loading...');
-          },
-        ),
+        title: Text('Chat with ${widget.botName}'),
         centerTitle: true,
+        backgroundColor: Colors.blue[800],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('chats')
-                  .doc(widget.chatId)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasData) {
-                  final chat = Chat.fromDocumentSnapshot(snapshot.data!);
-                  return ListView.builder(
-                    reverse: true,
-                    controller: _scrollController,
-                    itemCount: chat.messages.length,
-                    itemBuilder: (context, index) {
-                      return _buildMessageBubble(
-                          chat.messages[chat.messages.length - 1 - index]);
-                    },
-                  );
-                }
-                return const Center(child: CircularProgressIndicator());
-              },
+      body: Container(
+        color: Colors.grey[100],
+        child: Column(
+          children: [
+            Expanded(
+              child: _conversation.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Get started by sending a message!',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      reverse: true,
+                      controller: _scrollController,
+                      itemCount: _conversation.length,
+                      itemBuilder: (context, index) {
+                        return _buildMessageBubble(
+                            _conversation[_conversation.length - 1 - index]);
+                      },
+                    ),
             ),
-          ),
-          _buildInputArea(),
-        ],
+            _buildInputArea(),
+          ],
+        ),
       ),
     );
   }
@@ -171,6 +257,7 @@ class _ChatPageState extends State<ChatPage> {
         children: [
           Expanded(
             child: TextField(
+              style: const TextStyle(fontSize: 16, color: Colors.black),
               controller: _messageController,
               decoration: InputDecoration(
                 hintText: 'Type a message...',
@@ -186,7 +273,7 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               ),
               textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
+              onSubmitted: (_) async => await _sendMessage(),
             ),
           ),
           const SizedBox(width: 8),
@@ -199,7 +286,7 @@ class _ChatPageState extends State<ChatPage> {
                   )
                 : const Icon(Icons.send),
             onPressed: _isLoading ? null : _sendMessage,
-            color: Colors.blue,
+            color: Colors.blue[700],
           ),
         ],
       ),

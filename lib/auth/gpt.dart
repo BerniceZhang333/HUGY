@@ -27,43 +27,6 @@ Future<List<String>> getPreviousMessages(String chatId) async {
 
   return messages;
 }
-/** 
-
-Future<String> getResponse(
-    String message, String behavior, String chatId) async {
-  FirebaseFirestore fs = FirebaseFirestore.instance;
-  final OpenAIKey = await fs.collection('keys').doc('openai_key').get();
-  final data = OpenAIKey.data()?['data'];
-
-  final openAI = OpenAI.instance.build(
-    token: data,
-  );
-
-  var lastMessages = await getPreviousMessages(chatId);
-
-  final completion = ChatCompleteText(
-      messages: [
-            Messages(role: Role.system, content: behavior).toJson(),
-            Messages(role: Role.user, content: message).toJson()
-          ] +
-          lastMessages.map((e) => e.toJson()).toList(),
-      maxToken: 200,
-      model: GptTurboChatModel());
-
-  final res = await openAI
-      .onChatCompletion(request: completion)
-      .then((ChatCTResponse? response) => {
-            if (response == null)
-              {"Could not get response"}
-            else
-              response.choices[0].message!.content
-          });
-
-  return res.toString();
-}
-
-
-*/
 
 Future<String?> getResponse(
     String message, String behavior, String chatId) async {
