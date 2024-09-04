@@ -88,6 +88,7 @@ class _MeditationPageState extends State<MeditationPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(

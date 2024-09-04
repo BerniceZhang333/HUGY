@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:hugy/screens/splash.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'package:yaru/yaru.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -36,12 +35,11 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return YaruTheme(builder: (context, yaru, child) {
-      return MaterialApp(
+    return MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: yaruSageDark,
+   
         home: const AuthGate(),
       );
-    });
+    
   }
 }
