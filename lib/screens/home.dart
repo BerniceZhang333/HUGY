@@ -6,6 +6,7 @@ import 'package:hugy/screens/contacts.dart';
 import 'package:hugy/screens/advice.dart';
 import 'package:hugy/screens/journal.dart';
 import 'package:hugy/screens/profile.dart';
+import 'package:hugy/screens/task_page.dart';
 
 class Home extends StatefulWidget {
   const Home({Key? key}) : super(key: key);
@@ -102,6 +103,15 @@ class _HomeState extends State<Home> {
           color: Colors.orange,
           onTap: () => Navigator.push(
               context, MaterialPageRoute(builder: (_) => const DiscoverPage())),
+        ),
+
+        // taskpage
+        _buildDashboardItem(
+          icon: Icons.check,
+          title: "My Tasks",
+          color: Colors.purple,
+          onTap: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const TaskPage())),
         ),
       ],
     );
